@@ -72,12 +72,8 @@ Some variable names are pre-defined and accessed by the routing engine:
 
 - for the global section these are:
 
-  - 7 elevation configuration parameters:
+  - 3 elevation configuration parameters:
 
-    - `downhillcost`
-    - `downhillcutoff`
-    - `uphillcost`
-    - `uphillcutoff`
     - `elevationpenaltybuffer`
     - `elevationmaxbuffer`
     - `elevationbufferreduce`
@@ -119,6 +115,10 @@ Some variable names are pre-defined and accessed by the routing engine:
   - `costfactor`
   - `uphillcostfactor`
   - `downhillcostfactor`
+  - `uphillcost`
+  - `uphillcutoff`
+  - `downhillcost`
+  - `downhillcutoff`
   - `nodeaccessgranted`
   - `initialclassifier`
   - `priorityclassifier`

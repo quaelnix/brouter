@@ -18,6 +18,11 @@ final class StdPath extends OsmPath {
   private float totalEnergy; // total route energy (Joule)
   private float elevation_buffer; // just another elevation buffer (for travel time)
 
+  private int minuphillcostdiv;
+  private int maxuphillcostdiv;
+  private int mindownhillcostdiv;
+  private int maxdownhillcostdiv;
+
   // Gravitational constant, g
   private static final double GRAVITY = 9.81;  // in meters per second^(-2)
 
@@ -29,6 +34,10 @@ final class StdPath extends OsmPath {
     this.totalTime = origin.totalTime;
     this.totalEnergy = origin.totalEnergy;
     this.elevation_buffer = origin.elevation_buffer;
+    this.minuphillcostdiv = origin.minuphillcostdiv;
+    this.maxuphillcostdiv = origin.maxuphillcostdiv;
+    this.mindownhillcostdiv = origin.mindownhillcostdiv;
+    this.maxdownhillcostdiv = origin.maxdownhillcostdiv;
   }
 
   @Override
@@ -38,17 +47,39 @@ final class StdPath extends OsmPath {
     totalTime = 0.f;
     totalEnergy = 0.f;
     elevation_buffer = 0.f;
+    minuphillcostdiv = 0;
+    maxuphillcostdiv = 0;
+    mindownhillcostdiv = 0;
+    maxdownhillcostdiv = 0;
   }
 
   @Override
   protected double processWaySection(RoutingContext rc, double distance, double delta_h, double elevation, double angle, double cosangle, boolean isStartpoint, int nsection, int lastpriorityclassifier) {
     // calculate the costfactor inputs
     float turncostbase = rc.expctxWay.getTurncost();
+    float uphillcutoff = rc.expctxWay.getUphillcutoff() * 10000;
+    float downhillcutoff = rc.expctxWay.getDownhillcutoff() * 10000;
     float cfup = rc.expctxWay.getUphillCostfactor();
     float cfdown = rc.expctxWay.getDownhillCostfactor();
     float cf = rc.expctxWay.getCostfactor();
     cfup = cfup == 0.f ? cf : cfup;
     cfdown = cfdown == 0.f ? cf : cfdown;
+
+    int downhillcostdiv = (int) rc.expctxWay.getDownhillcost();
+    if (downhillcostdiv > 0) {
+      downhillcostdiv = 1000000 / downhillcostdiv;
+      mindownhillcostdiv = mindownhillcostdiv > 0 ? mindownhillcostdiv : downhillcostdiv;
+      mindownhillcostdiv = Math.min(downhillcostdiv, mindownhillcostdiv);
+      maxdownhillcostdiv = Math.max(maxdownhillcostdiv, downhillcostdiv);
+    }
+
+    int uphillcostdiv = (int) rc.expctxWay.getUphillcost();
+    if (uphillcostdiv > 0) {
+      uphillcostdiv = 1000000 / uphillcostdiv;
+      minuphillcostdiv = minuphillcostdiv > 0 ? minuphillcostdiv : uphillcostdiv;
+      minuphillcostdiv = Math.min(uphillcostdiv, minuphillcostdiv);
+      maxuphillcostdiv = Math.max(maxuphillcostdiv, uphillcostdiv);
+    }
 
     int dist = (int) distance; // legacy arithmetics needs int
 
@@ -66,8 +97,8 @@ final class StdPath extends OsmPath {
     // leads to an immediate penalty
 
     int delta_h_micros = (int) (1000000. * delta_h);
-    ehbd += -delta_h_micros - dist * rc.downhillcutoff;
-    ehbu += delta_h_micros - dist * rc.uphillcutoff;
+    ehbd += -delta_h_micros - dist * downhillcutoff;
+    ehbu += delta_h_micros - dist * uphillcutoff;
 
     float downweight = 0.f;
     if (ehbd > rc.elevationpenaltybuffer) {
@@ -84,8 +115,8 @@ final class StdPath extends OsmPath {
         reduce = excess;
       }
       ehbd -= reduce;
-      if (rc.downhillcostdiv > 0) {
-        int elevationCost = reduce / rc.downhillcostdiv;
+      if (downhillcostdiv > 0) {
+        int elevationCost = reduce / downhillcostdiv;
         sectionCost += elevationCost;
         if (message != null) {
           message.linkelevationcost += elevationCost;
@@ -110,8 +141,8 @@ final class StdPath extends OsmPath {
         reduce = excess;
       }
       ehbu -= reduce;
-      if (rc.uphillcostdiv > 0) {
-        int elevationCost = reduce / rc.uphillcostdiv;
+      if (uphillcostdiv > 0) {
+        int elevationCost = reduce / uphillcostdiv;
         sectionCost += elevationCost;
         if (message != null) {
           message.linkelevationcost += elevationCost;
@@ -153,23 +184,23 @@ final class StdPath extends OsmPath {
   }
 
   @Override
-  public int elevationCorrection(RoutingContext rc) {
-    return (rc.downhillcostdiv > 0 ? ehbd / rc.downhillcostdiv : 0)
-      + (rc.uphillcostdiv > 0 ? ehbu / rc.uphillcostdiv : 0);
+  public int elevationCorrection() {
+    return (mindownhillcostdiv > 0 ? ehbd / mindownhillcostdiv : 0)
+      + (minuphillcostdiv > 0 ? ehbu / minuphillcostdiv : 0);
   }
 
   @Override
-  public boolean definitlyWorseThan(OsmPath path, RoutingContext rc) {
+  public boolean definitlyWorseThan(OsmPath path) {
     StdPath p = (StdPath) path;
 
     int c = p.cost;
-    if (rc.downhillcostdiv > 0) {
-      int delta = p.ehbd - ehbd;
-      if (delta > 0) c += delta / rc.downhillcostdiv;
+    if (p.mindownhillcostdiv > 0) {
+      int delta = p.ehbd / p.mindownhillcostdiv - (maxdownhillcostdiv > 0 ? ehbd / maxdownhillcostdiv : 0);
+      if (delta > 0) c += delta;
     }
-    if (rc.uphillcostdiv > 0) {
-      int delta = p.ehbu - ehbu;
-      if (delta > 0) c += delta / rc.uphillcostdiv;
+    if (p.minuphillcostdiv > 0) {
+      int delta = p.ehbu / p.minuphillcostdiv - (maxuphillcostdiv > 0 ? ehbu / maxuphillcostdiv : 0);
+      if (delta > 0) c += delta;
     }
 
     return cost > c;
