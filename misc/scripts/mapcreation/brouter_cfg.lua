@@ -26,6 +26,7 @@ tables.polygons = osm2pgsql.define_area_table('polygons', {
    { column = 'population', type = 'text' },
    { column = 'landuse', type = 'text' },
    { column = 'leisure', type = 'text' },
+   { column = 'building', type = 'text' },
    { column = 'natural', type = 'text' },
    { column = 'water', type = 'text' },
    { column = 'way', type = 'geometry', projection = srid, not_null = true },
@@ -106,13 +107,14 @@ end
 function osm2pgsql.process_way(object)
    local way_type = object:grab_tag('type')
 
-   if  ( object.tags.natural == 'water') or (object.tags.landuse ~= nil ) or (object.tags.leisure ~= nil ) then
+   if  ( object.tags.natural == 'water') or (object.tags.landuse ~= nil ) or (object.tags.leisure ~= nil ) or (object.tags.building ~= nil ) then
       tables.polygons:insert({
          name     = object.tags.name,
          osm_id    = object.id,
          type  = way_type,
          landuse = object.tags.landuse,
          leisure     = object.tags.leisure,
+         building     = object.tags.building,
          natural    = object.tags.natural,
          water = object.tags.water,
          way = object:as_polygon()
@@ -147,6 +149,7 @@ function osm2pgsql.process_relation(object)
       population = object.tags.population,
       landuse = object.tags.landuse,
       leisure     = object.tags.leisure,
+      building     = object.tags.building,
       natural    = object.tags.natural,
       water = object.tags.water,
       way = object:as_multipolygon()

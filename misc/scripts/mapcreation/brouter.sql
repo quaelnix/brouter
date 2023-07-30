@@ -68,8 +68,8 @@ WHERE
 
 SELECT
     osm_id::bigint,
-    leisure,
     landuse,
+    building,
     p.natural,
     p.water,
     ST_Buffer (way, 32.15 * st_length (ST_Transform (st_makeline (st_startpoint (way), st_centroid (way)), 3857)) / st_length (ST_Transform (st_makeline (st_startpoint (way), st_centroid (way)), 4326)::geography)) AS way INTO TABLE osm_poly_buf_50
@@ -77,15 +77,16 @@ FROM
     polygons p
 WHERE
     -- do not consider small surfaces
-    st_area (p.way) > 1000
-    AND p.natural IN ('water')
-    OR (p.landuse IN ('forest', 'allotments', 'flowerbed', 'orchard', 'vineyard', 'recreation_ground', 'village_green')
-        OR p.leisure IN ('garden', 'park', 'nature_reserve'));
+    (p.natural IN ('water')
+        OR p.landuse IN ('forest'))
+    AND st_area (st_transform (p.way, 4326)::geography) > 1000
+    OR p.building IN ('yes', 'house', 'residential', 'detached', 'garage', 'apartments', 'industrial', 'terrace', 'semidetached_house', 'commercial', 'school', 'retail', 'garages', 'construction', 'church', 'warehouse', 'office', 'civic', 'university', 'public', 'hospital', 'hotel', 'manufacture', 'kindergarten', 'mosque', 'dormitory', 'college', 'parking', 'government', 'sports_centre', 'supermarket')
+    AND st_area (st_transform (p.way, 4326)::geography) > 50;
 
 SELECT
     osm_id::bigint,
-    leisure,
     landuse,
+    building,
     p.natural,
     p.water,
     way INTO TABLE osm_poly_no_buf
@@ -93,14 +94,14 @@ FROM
     polygons p
 WHERE
     -- do not consider small surfaces
-    st_area (p.way) > 1000
-    AND p.natural IN ('water')
-    OR (p.landuse IN ('forest', 'allotments', 'flowerbed', 'orchard', 'vineyard', 'recreation_ground', 'village_green')
-        OR p.leisure IN ('garden', 'park', 'nature_reserve'));
+    (p.natural IN ('water')
+        OR p.landuse IN ('forest'))
+    AND st_area (st_transform (p.way, 4326)::geography) > 1000
+    OR p.building IN ('yes', 'house', 'residential', 'detached', 'garage', 'apartments', 'industrial', 'terrace', 'semidetached_house', 'commercial', 'school', 'retail', 'garages', 'construction', 'church', 'warehouse', 'office', 'civic', 'university', 'public', 'hospital', 'hotel', 'manufacture', 'kindergarten', 'mosque', 'dormitory', 'college', 'parking', 'government', 'sports_centre', 'supermarket')
+    AND st_area (st_transform (p.way, 4326)::geography) > 50;
 
 SELECT
     osm_id::bigint,
-    leisure,
     landuse,
     p.natural,
     p.water,
@@ -545,9 +546,7 @@ FROM
     INNER JOIN osm_poly_no_buf AS q ON ST_Intersects (m.way, q.way)
 WHERE
     m.highway IS NOT NULL
-    AND ((q.landuse IN ('forest', 'allotments', 'flowerbed', 'orchard', 'vineyard', 'recreation_ground', 'village_green'))
-        OR q.leisure IN ('garden', 'park', 'nature_reserve'))
-    AND (st_area (ST_Transform (q.way, 4326)::geography) / 1000000) < 5000
+    AND q.landuse IN ('forest')
 GROUP BY
     m.osm_id,
     m.highway,
@@ -599,90 +598,44 @@ SELECT
 --  create "town" tags
 -- get the highways which intersect the town
 SELECT
-    m.osm_id losmid,
-    m.highway lhighway,
-    CASE WHEN q.population::decimal > '2000000' THEN
-        1
-    WHEN q.population::decimal > '1000000' THEN
-        0.8
-    WHEN q.population::decimal > '400000' THEN
-        0.6
-    WHEN q.population::decimal > '150000' THEN
-        0.4
-    WHEN q.population::decimal > '80000' THEN
-        0.2
-    ELSE
-        0.1
-    END AS town_factor INTO TABLE town_tmp
+    m.osm_id,
+    m.highway,
+    st_area (st_intersection (m.way, ST_Union (q.way))) / st_area (m.way) AS town_factor INTO TABLE town_tmp
 FROM
     osm_line_buf_50 AS m
-    INNER JOIN cities_all AS q ON ST_Intersects (m.way, q.way)
+    INNER JOIN osm_poly_buf_50 AS q ON ST_Intersects (m.way, q.way)
 WHERE
     m.highway IS NOT NULL
-    AND q.population > '50000'
+    AND q.building IN ('yes', 'house', 'residential', 'detached', 'garage', 'apartments', 'industrial', 'terrace', 'semidetached_house', 'commercial', 'school', 'retail', 'garages', 'construction', 'church', 'warehouse', 'office', 'civic', 'university', 'public', 'hospital', 'hotel', 'manufacture', 'kindergarten', 'mosque', 'dormitory', 'college', 'parking', 'government', 'sports_centre', 'supermarket')
+GROUP BY
+    m.osm_id,
+    m.highway,
+    m.way
 ORDER BY
     town_factor DESC;
 
 --
 SELECT
-    losmid,
-    CASE WHEN y.town_factor = 0.1 THEN
+    y.osm_id losmid,
+    CASE WHEN y.town_factor < 0.1 THEN
+        NULL
+    WHEN y.town_factor < 0.2 THEN
         '1'
-    WHEN y.town_factor = 0.2 THEN
+    WHEN y.town_factor < 0.4 THEN
         '2'
-    WHEN y.town_factor = 0.4 THEN
+    WHEN y.town_factor < 0.6 THEN
         '3'
-    WHEN y.town_factor = 0.6 THEN
+    WHEN y.town_factor < 0.8 THEN
         '4'
-    WHEN y.town_factor = 0.8 THEN
+    WHEN y.town_factor < 0.9 THEN
         '5'
     ELSE
         '6'
     END AS town_class INTO TABLE town_tags
-FROM (
-    SELECT
-        losmid,
-        max(town_factor) AS town_factor
-    FROM
-        town_tmp y
-    GROUP BY
-        losmid) y;
-
-SELECT
-    count(*)
 FROM
-    town_tags;
-
-SELECT
-    town_class,
-    count(*)
-FROM
-    town_tags
-GROUP BY
-    town_class
-ORDER BY
-    town_class;
-
---
---  substract the ways from town with a green tag (because administrative surface are some times too large)
---
-DELETE FROM town_tags
-WHERE losmid IN (
-        SELECT
-            losmid
-        FROM
-            forest_tags
-        WHERE
-            forest_class NOT IN ('1'));
-
-DELETE FROM town_tags
-WHERE losmid IN (
-        SELECT
-            losmid
-        FROM
-            river_tags
-        WHERE
-            river_class NOT IN ('1'));
+    town_tmp y
+WHERE
+    y.town_factor > 0.1;
 
 SELECT
     count(*)
