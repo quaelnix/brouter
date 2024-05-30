@@ -252,7 +252,8 @@ final class StdPath extends OsmPath {
     }
 
     double speed = maxSpeed; // Travel speed
-    double f_roll = rc.totalMass * GRAVITY * (rc.defaultC_r + incline);
+    double crf = Math.max(1, rc.expctxWay.getRollingResistanceFactor());
+    double f_roll = rc.totalMass * GRAVITY * (rc.defaultC_r * crf + incline);
     if (rc.footMode) {
       // Use Tobler's hiking function for walking sections
       speed = rc.maxSpeed * Math.exp(-3.5 * Math.abs(incline + 0.05));
